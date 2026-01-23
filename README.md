@@ -4,7 +4,7 @@ python3 -m venv venv
 ```
 
 After this activate it.
-Linux:
+Unix:
 ```
 source venv/bin/activate
 ```
