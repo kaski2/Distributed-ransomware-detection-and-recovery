@@ -5,7 +5,6 @@ import logging
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 import os
-from dotenv import load_dotenv
 import configparser
 from datetime import datetime, timedelta
 
@@ -62,10 +61,6 @@ def load_config():
         sys.exit(1)
     return config 
 
-
-load_dotenv()
-
-path = os.getenv('MONITORED_DIR_PATH')
 
 class MyEventHandler(FileSystemEventHandler):
     def __init__(self):
