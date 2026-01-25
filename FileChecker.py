@@ -69,6 +69,8 @@ class MyEventHandler(FileSystemEventHandler):
         self.alert_threshold = 10  # Alert if 10+ files modified in 60 seconds
         self.time_window = 60  # seconds
     
+    
+    # Check if too many files are being modified rapidly. Ransomware often modifies many files in a short period.
     def _check_suspicious_activity(self):
         """Check if too many files are being modified rapidly"""
         now = datetime.now()
@@ -83,11 +85,15 @@ class MyEventHandler(FileSystemEventHandler):
             print(f"   {len(self.events)} files modified in {self.time_window} seconds")
             print(f"   This could be ransomware!\n")
     
+    
+    # Monitor file modifications. 
     def on_modified(self, event):
         if not event.is_directory:
             self.events.append((datetime.now(), event.src_path))
             self._check_suspicious_activity()
     
+    
+    # Monitor creation of ransom note files. Ransomware often creates files like "README.txt" or "DECRYPT_INSTRUCTIONS.txt" that contain ransom demands.
     def on_created(self, event):
         if not event.is_directory:
             filename = Path(event.src_path).name.lower()
@@ -95,6 +101,8 @@ class MyEventHandler(FileSystemEventHandler):
             if "readme" in filename or "decrypt" in filename or "recover" in filename:
                 print(f"\nALERT: Possible ransom note created: {event.src_path}\n")
     
+    
+    # Monitor file extension changes. Ransomware often changes file extensions when it encrypts files.
     def on_moved(self, event):
         if not event.is_directory:
             old_ext = Path(event.src_path).suffix
