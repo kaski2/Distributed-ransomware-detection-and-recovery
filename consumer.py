@@ -1,6 +1,6 @@
-from kafka import KafkaProducer
+from kafka import KafkaConsumer
 
-consumer = KafkaProducer(bootstrap_servers='localhost:9092')
+consumer = KafkaConsumer(bootstrap_servers='localhost:9092')
 
 for message in consumer:
     print(f"Received: {message.value.decode('utf-8')}")
