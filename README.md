@@ -3,8 +3,13 @@ After cloning the repo you need to create a virtual environment:
 python3 -m venv venv
 ```
 
+<<<<<<< HEAD
 After creating it activate it like so:
 Linux:
+=======
+After this activate it.
+Unix:
+>>>>>>> ac184c4be0ca5177f0a7295694b4a4d57f39f69d
 ```
 source venv/bin/activate
 ```

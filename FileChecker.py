@@ -5,8 +5,8 @@ import logging
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 import os
-from dotenv import load_dotenv
 import configparser
+from datetime import datetime, timedelta
 
 
 # Config
@@ -62,13 +62,54 @@ def load_config():
     return config 
 
 
-load_dotenv()
-
-path = os.getenv('MONITORED_DIR_PATH')
-
 class MyEventHandler(FileSystemEventHandler):
-    def on_any_event(self, event: FileSystemEvent) -> None:
-        print(event)
+    def __init__(self):
+        super().__init__()
+        self.events = []  # Store (timestamp, filepath) tuples
+        self.alert_threshold = 10  # Alert if 10+ files modified in 60 seconds
+        self.time_window = 60  # seconds
+    
+    
+    # Check if too many files are being modified rapidly. Ransomware often modifies many files in a short period.
+    def _check_suspicious_activity(self):
+        """Check if too many files are being modified rapidly"""
+        now = datetime.now()
+        cutoff = now - timedelta(seconds=self.time_window)
+        
+        # Remove old events
+        self.events = [(t, p) for t, p in self.events if t > cutoff]
+        
+        # Alert if threshold exceeded
+        if len(self.events) >= self.alert_threshold:
+            print(f"\nSUSPICIOUS ACTIVITY DETECTED!")
+            print(f"   {len(self.events)} files modified in {self.time_window} seconds")
+            print(f"   This could be ransomware!\n")
+    
+    
+    # Monitor file modifications. 
+    def on_modified(self, event):
+        if not event.is_directory:
+            self.events.append((datetime.now(), event.src_path))
+            self._check_suspicious_activity()
+    
+    
+    # Monitor creation of ransom note files. Ransomware often creates files like "README.txt" or "DECRYPT_INSTRUCTIONS.txt" that contain ransom demands.
+    def on_created(self, event):
+        if not event.is_directory:
+            filename = Path(event.src_path).name.lower()
+            # Check for ransom notes
+            if "readme" in filename or "decrypt" in filename or "recover" in filename:
+                print(f"\nALERT: Possible ransom note created: {event.src_path}\n")
+    
+    
+    # Monitor file extension changes. Ransomware often changes file extensions when it encrypts files.
+    def on_moved(self, event):
+        if not event.is_directory:
+            old_ext = Path(event.src_path).suffix
+            new_ext = Path(event.dest_path).suffix
+            # Alert if file extension changed
+            if old_ext != new_ext:
+                print(f"File extension changed: {event.src_path} -> {event.dest_path}")
 
 
 
