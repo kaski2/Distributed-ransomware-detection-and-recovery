@@ -72,7 +72,7 @@ class MyEventHandler(FileSystemEventHandler):
     
     # Check if too many files are being modified rapidly. Ransomware often modifies many files in a short period.
     def _check_suspicious_activity(self):
-        """Check if too many files are being modified rapidly"""
+        # Check if too many files are being modified rapidly
         now = datetime.now()
         cutoff = now - timedelta(seconds=self.time_window)
         
