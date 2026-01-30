@@ -104,6 +104,7 @@ class MyEventHandler(FileSystemEventHandler):
     
     # Monitor file extension changes. Ransomware often changes file extensions when it encrypts files.
     def on_moved(self, event):
+        print("detected")
         if not event.is_directory:
             old_ext = Path(event.src_path).suffix
             new_ext = Path(event.dest_path).suffix
@@ -116,7 +117,7 @@ class MyEventHandler(FileSystemEventHandler):
 if __name__ == "__main__":
     config = load_config()
     path = config.get("settings", "MONITORED_DIR_PATH")
-    print(path)
+    print("Monitoring path:", path)
 
     event_handler = MyEventHandler()
     observer = Observer()
@@ -128,3 +129,4 @@ if __name__ == "__main__":
     finally:
         observer.stop()
         observer.join()
+        
