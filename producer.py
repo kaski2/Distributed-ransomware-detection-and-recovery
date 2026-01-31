@@ -42,32 +42,32 @@ class MyEventHandler(FileSystemEventHandler):
     def on_modified(self, event):
         if not event.is_directory:
             event_data = self._create_event(event)
-            self.event_producer.send_event(event_data)
+            self.send_event(event_data)
     
     # Detects creation of files.
     def on_created(self, event):
         if not event.is_directory:
             event_data = self._create_event(event)
-            self.event_producer.send_event(event_data)
+            self.send_event(event_data)
     
     # Detects deletion of files.
     def on_deleted(self, event):
         if not event.is_directory:
             event_data = self._create_event(event)
-            self.event_producer.send_event(event_data)
+            self.send_event(event_data)
     
     # Detects file move and rename events.
     def on_moved(self, event):
         if not event.is_directory:
             event_data = self._create_event(event)
             event_data['dest_path'] = event.dest_path
-            self.event_producer.send_event(event_data)
+            self.send_event(event_data)
 
     
     
     
-def monitor_directory(path, kafka_servers='localhost:9092', topic='file-events'):    
-    event_handler = MyEventHandler()
+def monitor_directory(event_producer, path, kafka_servers='localhost:29092', topic='file-events'):    
+    event_handler = MyEventHandler(event_producer)
     observer = Observer()
     observer.schedule(event_handler, path, recursive=True)
     observer.start()
@@ -81,7 +81,8 @@ def monitor_directory(path, kafka_servers='localhost:9092', topic='file-events')
 
 
 if __name__ == "__main__":
-    event_producer = KafkaProducer(bootstrap_servers='localhost:9092')
+    event_producer = KafkaProducer(bootstrap_servers='localhost:29092')
+    monitor_directory(event_producer, '/path/to/monitor', kafka_servers='localhost:29092', topic=topic)
     
     
     
