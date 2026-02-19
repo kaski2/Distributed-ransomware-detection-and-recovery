@@ -34,6 +34,12 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
     volumes:
       - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "bash", "-c", "nc -z localhost 9092"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -51,19 +57,21 @@ services:
     build: .
     container_name: node1
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ALERT_TOPIC: security-alerts
     volumes:
       - ./settings-node1.ini:/app/settings.ini
-      - C:/Users/ainas/Distributed-ransomware-detection-and-recovery:/data
+      - F:/anime:/data
 
   node2:
     build: .
     container_name: node2
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ALERT_TOPIC: security-alerts
@@ -75,7 +83,8 @@ services:
     build: .
     container_name: node3
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ALERT_TOPIC: security-alerts
