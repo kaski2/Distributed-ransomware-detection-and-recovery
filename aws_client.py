@@ -9,20 +9,14 @@ import configparser
 import boto3
 import time
 
-CONFIG_FILE = Path("settings.ini")
 
-def load_config():
-    config = configparser.ConfigParser()
-    try:
-        if CONFIG_FILE.exists():
-            config.read(CONFIG_FILE)
-    except Exception as e:
-        print(f"[Config] Failed to load config: {e}")
-    return config
+
 
 def _get_env_variables():
+    
+    aws_vars_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.aws', 'variables')
     config = configparser.ConfigParser()
-    config.read_string('[DEFAULT]\n' + open('.aws/variables').read())
+    config.read_string('[DEFAULT]\n' + open(aws_vars_path).read())
 
     for key, value in config['DEFAULT'].items():
         os.environ[key.upper()] = value.strip('"').strip("'")
@@ -151,17 +145,3 @@ def start_snapshot_scheduler(directory: str, interval_seconds: int = 300):
     thread.start()
     return thread
 
-
-if __name__ == "__main__":
-    config = load_config()
-    path = config.get("settings", "MONITORED_DIR_PATH")
-    interval = config.getint("settings", "SNAPSHOT_INTERVAL_SECONDS", fallback=30)
-
-    start_snapshot_scheduler(path, interval)
-    
-    print("[Main] Snapshot scheduler running.")
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("[Main] Stopped.")
