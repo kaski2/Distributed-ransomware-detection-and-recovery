@@ -9,6 +9,17 @@ import configparser
 import boto3
 import time
 
+CONFIG_FILE = Path("settings.ini")
+
+def load_config():
+    config = configparser.ConfigParser()
+    try:
+        if CONFIG_FILE.exists():
+            config.read(CONFIG_FILE)
+    except Exception as e:
+        print(f"[Config] Failed to load config: {e}")
+    return config
+
 def _get_env_variables():
     config = configparser.ConfigParser()
     config.read_string('[DEFAULT]\n' + open('.aws/variables').read())
@@ -27,6 +38,14 @@ def _initialize_s3_client():
 
 
 def take_directory_snapshot(directory: str) -> dict:
+    '''
+    Takes a snapshot of a directory and returns it as a dictionary.
+    Saves data such as:
+    -size
+    -last modified time
+    -SHA-256 hash of contents
+    -base64-encoded contents (for recovery)
+    '''
     snapshot = {
         "directory": directory,
         "taken_at": datetime.now(timezone.utc).isoformat(),
@@ -64,6 +83,9 @@ def take_directory_snapshot(directory: str) -> dict:
 
 
 def upload_snapshot_to_s3(snapshot: dict) -> bool:
+    '''
+    Uploads the given snapshot to S3 as a JSON file.
+    '''
     s3 = _initialize_s3_client()
     try:
         bucket = os.environ['AWS_BUCKET_NAME']
@@ -80,6 +102,10 @@ def upload_snapshot_to_s3(snapshot: dict) -> bool:
 
 
 def get_snapshot_from_s3(key: str = None) -> dict | None:
+    '''
+    Retrieves a snapshot from S3.
+    If `key` is None, retrieves the most recently uploaded snapshot.
+    '''
     try:
         s3 = _initialize_s3_client()
         bucket = os.environ['AWS_BUCKET_NAME']
@@ -108,6 +134,9 @@ def get_snapshot_from_s3(key: str = None) -> dict | None:
 
 
 def start_snapshot_scheduler(directory: str, interval_seconds: int = 300):
+    '''
+    Starts a background thread that periodically takes snapshots of a directory and uploads them to S3.
+    '''
     def _run():
         print(f"[Scheduler] Starting — snapshot every {interval_seconds}s for: {directory}")
         while True:
@@ -124,9 +153,11 @@ def start_snapshot_scheduler(directory: str, interval_seconds: int = 300):
 
 
 if __name__ == "__main__":
-    MONITORED_DIR = "./node1_data"
-    SNAPSHOT_INTERVAL = 30 
-    start_snapshot_scheduler(MONITORED_DIR, SNAPSHOT_INTERVAL)
+    config = load_config()
+    path = config.get("settings", "MONITORED_DIR_PATH")
+    interval = config.getint("settings", "SNAPSHOT_INTERVAL_SECONDS", fallback=30)
+
+    start_snapshot_scheduler(path, interval)
     
     print("[Main] Snapshot scheduler running.")
     try:
