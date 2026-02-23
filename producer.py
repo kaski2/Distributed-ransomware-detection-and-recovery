@@ -114,11 +114,14 @@ class MyEventHandler(FileSystemEventHandler):
     
 
     def send_event(self, event_data):
-        future = self.event_producer.send(topic, value=str(event_data).encode('utf-8'))
-        record_metadata = future.get(timeout=10)
-            
-        print(f"Event sent: {event_data['event_type']} - {event_data['file_path']}")
-        print(f"  Partition: {record_metadata.partition}, Offset: {record_metadata.offset}")
+        print(f"[DEBUG] Attempting to send to topic '{topic}': {event_data}")
+        try: 
+            future = self.event_producer.send(topic, value=str(event_data).encode('utf-8'))
+            record_metadata = future.get(timeout=10)
+            print(f"Event sent: {event_data['event_type']} - {event_data['file_path']}")
+            print(f"[DEBUG] Successfully sent to partition {record_metadata.partition}, offset {record_metadata.offset}")  
+        except Exception as e:
+            print(f"[ERROR] Failed to send event: {e}")
 
     def _check_rate_alert(self, now):
         cutoff = now - self.rate_window
@@ -195,6 +198,10 @@ class MyEventHandler(FileSystemEventHandler):
     
     
 def monitor_directory(event_producer, path, alert_manager, config):
+    print(f"[DEBUG] Starting monitoring on path: {path}")
+    if not os.path.exists(path):
+        print(f"[ERROR] Monitored path does not exist: {path}")
+        sys.exit(1)
     rate_threshold = int(config.get("detection", "rate_threshold", fallback="10"))
     rate_window_seconds = int(config.get("detection", "rate_window_seconds", fallback="60"))
     cooldown_seconds = int(config.get("detection", "cooldown_seconds", fallback="30"))
@@ -231,7 +238,19 @@ if __name__ == "__main__":
     config = load_config()
     path = config.get("settings", "MONITORED_DIR_PATH")
     kafka_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-    event_producer = KafkaProducer(bootstrap_servers=kafka_servers)
+    print(f"[DEBUG] Connecting to Kafka at: {kafka_servers}")
+    print(f"[DEBUG] Path: {path}")
+    try: 
+        event_producer = KafkaProducer(
+            bootstrap_servers=kafka_servers,
+            retries=5,                        # ADD: retry on failure
+            retry_backoff_ms=1000,
+        )
+        print(f"[DEBUG] KafkaProducer created successfully")
+    except Exception as e:
+        print(f"[ERROR] Failed to create KafkaProducer: {e}")
+        sys.exit(1)
+        
     alert_topic = os.getenv("ALERT_TOPIC", "security-alerts")
     node_id = config.get("agent", "node_id", fallback="").strip()
     if not node_id:

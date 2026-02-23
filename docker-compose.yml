@@ -64,7 +64,7 @@ services:
       ALERT_TOPIC: security-alerts
     volumes:
       - ./settings-node1.ini:/app/settings.ini
-      - F:/anime:/data
+      - ./node1_data:/data
 
   node2:
     build: .
