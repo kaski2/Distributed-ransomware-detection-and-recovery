@@ -18,7 +18,7 @@ def _get_env_variables():
     for key, value in config['DEFAULT'].items():
         os.environ[key.upper()] = value.strip('"').strip("'")
 
-def _initialize_s3_client():
+def _initialize_s3_client() -> boto3.client:
     _get_env_variables()
     s3 = boto3.client('s3',
         aws_access_key_id=os.environ['AWS_ACCESS_KEY'],
@@ -129,7 +129,7 @@ def get_snapshot_from_s3(key: str = None) -> dict | None:
         return None
 
 
-def start_snapshot_scheduler(directory: str, interval_seconds: int = 300):
+def start_snapshot_scheduler(directory: str, interval_seconds: int = 300) -> threading.Thread:
     '''
     Starts a background thread that periodically takes snapshots of a directory and uploads them to S3.
     '''
