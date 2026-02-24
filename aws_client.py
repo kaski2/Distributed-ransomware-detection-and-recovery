@@ -7,9 +7,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 import configparser
 import boto3
-import time
-
-
 
 
 def _get_env_variables():
