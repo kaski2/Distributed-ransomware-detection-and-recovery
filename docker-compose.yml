@@ -63,8 +63,8 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ALERT_TOPIC: security-alerts
     volumes:
-      - ./settings-node1.ini:/app/settings.ini
-      - ./node1_data:/data
+      - ./config/settings-node1.ini:/app/settings.ini
+      - ./data/node1_data:/data
       - ./.aws:/.aws
 
   node2:
@@ -77,8 +77,8 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ALERT_TOPIC: security-alerts
     volumes:
-      - ./settings-node2.ini:/app/settings.ini
-      - ./node2_data:/data
+      - ./config/settings-node2.ini:/app/settings.ini
+      - ./data/node2_data:/data
       - ./.aws:/.aws
 
   node3:
@@ -91,8 +91,8 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ALERT_TOPIC: security-alerts
     volumes:
-      - ./settings-node3.ini:/app/settings.ini
-      - ./node3_data:/data
+      - ./config/settings-node3.ini:/app/settings.ini
+      - ./data/node3_data:/data
       - ./.aws:/.aws
 
 volumes:

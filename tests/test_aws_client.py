@@ -1,5 +1,3 @@
-
-
 if __name__ == "__main__":
     import configparser
     import os
@@ -10,7 +8,7 @@ if __name__ == "__main__":
     for key, value in config['DEFAULT'].items():
         os.environ[key.upper()] = value.strip('"').strip("'")
 
-    from aws_client import upload_snapshot_to_s3
+    from src.aws_client import upload_snapshot_to_s3
 
     # Test upload
     snapshot = {"key": "test_snapshot",
@@ -20,10 +18,8 @@ if __name__ == "__main__":
         print("Snapshot uploaded successfully.")
     else:
         print("Failed to upload snapshot.")
-    
+
     # Test retrieve
     print("\n--- Testing Retrieval ---")
-    from aws_client import get_snapshot_from_s3
+    from src.aws_client import get_snapshot_from_s3
     get_snapshot_from_s3()
-    
-
