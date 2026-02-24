@@ -11,6 +11,7 @@ import socket
 import json
 
 from alerting import AlertManager, AlertSigner, GossipNode
+from aws_client import start_snapshot_scheduler
 
 
 topic = 'file-monitoring'
@@ -237,6 +238,7 @@ def monitor_directory(event_producer, path, alert_manager, config):
 if __name__ == "__main__":
     config = load_config()
     path = config.get("settings", "MONITORED_DIR_PATH")
+    interval = config.getint("settings", "SNAPSHOT_INTERVAL_SECONDS")
     kafka_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
     print(f"[DEBUG] Connecting to Kafka at: {kafka_servers}")
     print(f"[DEBUG] Path: {path}")
@@ -297,7 +299,7 @@ if __name__ == "__main__":
         gossip_node=gossip_node,
         send_to_coordinator=send_to_coordinator,
     )
-
+    start_snapshot_scheduler(path, interval)
     monitor_directory(event_producer, path, alert_manager, config)
     
     

@@ -65,6 +65,7 @@ services:
     volumes:
       - ./settings-node1.ini:/app/settings.ini
       - ./node1_data:/data
+      - ./.aws:/.aws
 
   node2:
     build: .
@@ -78,6 +79,7 @@ services:
     volumes:
       - ./settings-node2.ini:/app/settings.ini
       - ./node2_data:/data
+      - ./.aws:/.aws
 
   node3:
     build: .
@@ -91,6 +93,7 @@ services:
     volumes:
       - ./settings-node3.ini:/app/settings.ini
       - ./node3_data:/data
+      - ./.aws:/.aws
 
 volumes:
   zookeeper-data:

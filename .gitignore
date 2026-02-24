@@ -2,3 +2,4 @@ venv/
 .env
 *.ini
 __pycache__/
+.aws/
