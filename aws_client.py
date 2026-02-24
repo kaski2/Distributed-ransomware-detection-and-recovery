@@ -35,10 +35,10 @@ def take_directory_snapshot(directory: str) -> dict:
     '''
     Takes a snapshot of a directory and returns it as a dictionary.
     Saves data such as:
-    -size
-    -last modified time
-    -SHA-256 hash of contents
-    -base64-encoded contents (for recovery)
+        -size
+        -last modified time
+        -SHA-256 hash of contents
+        -base64-encoded contents (for recovery)
     '''
     snapshot = {
         "directory": directory,
@@ -82,9 +82,14 @@ def upload_snapshot_to_s3(snapshot: dict) -> bool:
     '''
     s3 = _initialize_s3_client()
     try:
+        
+        config = configparser.ConfigParser()
+        config.read('/app/settings.ini')
+        node_id = config.get('agent', 'node_id', fallback='unknown')
+        
         bucket = os.environ['AWS_BUCKET_NAME']
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        key = f"snapshots/snapshot_{timestamp}.json"
+        key = f"snapshots/{node_id}_snapshot_{timestamp}.json"
         data = json.dumps(snapshot, indent=2)
 
         s3.put_object(Bucket=bucket, Key=key, Body=data, ContentType="application/json")
