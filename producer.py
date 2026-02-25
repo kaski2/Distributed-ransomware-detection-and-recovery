@@ -2,17 +2,11 @@ from kafka import KafkaProducer
 from pathlib import Path
 import sys
 import time
-from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
 import os
 import configparser
-from datetime import datetime, timedelta, timezone
-import socket
+from datetime import datetime, timezone
 import json
-
-from alerting import AlertManager, AlertSigner, GossipNode
-from aws_client import start_snapshot_scheduler
-
+import binascii
 
 topic = 'file-monitoring'
 
@@ -67,241 +61,136 @@ def load_config():
     return config
 
 
-def get_bool_setting(config, section, option, fallback):
-    value = config.get(section, option, fallback=str(fallback)).strip()
-    return value.lower() in ("1", "true", "yes", "on")
+def send_event(event_producer, event_data):
+    print(f"[DEBUG] Attempting to send to topic '{topic}': {event_data}")
+    try:
+        future = event_producer.send(topic, value=str(event_data).encode('utf-8'))
+        record_metadata = future.get(timeout=10)
+        print(f"Event sent: {event_data['event_type']} - {event_data['file_path']}")
+        print(f"[DEBUG] Successfully sent to partition {record_metadata.partition}, offset {record_metadata.offset}")
+    except Exception as e:
+        print(f"[ERROR] Failed to send event: {e}")
 
 
-def parse_peers(peers_value):
-    peers = []
-    if not peers_value:
-        return peers
-    for item in peers_value.split(","):
-        item = item.strip()
-        if not item:
-            continue
-        if ":" not in item:
-            continue
-        host, port_str = item.rsplit(":", 1)
+def read_file_contents(file_path, max_size_bytes=1024*1024):
+    """
+    Safely read file contents. Returns either text content or base64-encoded binary.
+    max_size_bytes: Maximum file size to read (default 1MB)
+    """
+    try:
+        stat = os.stat(file_path)
+        if stat.st_size > max_size_bytes:
+            return f"<File too large: {stat.st_size} bytes, max: {max_size_bytes} bytes>"
+        
         try:
-            port = int(port_str)
-        except ValueError:
-            continue
-        peers.append((host.strip(), port))
-    return peers
-   
- 
-class MyEventHandler(FileSystemEventHandler):
-    def __init__(
-        self,
-        event_producer,
-        alert_manager: AlertManager,
-        rate_threshold: int,
-        rate_window_seconds: int,
-        cooldown_seconds: int,
-        ransom_note_keywords,
-        extension_change_alert: bool,
-    ):
-        self.event_producer = event_producer
-        self.alert_manager = alert_manager
-        self.rate_threshold = rate_threshold
-        self.rate_window = timedelta(seconds=rate_window_seconds)
-        self.cooldown_seconds = cooldown_seconds
-        self.ransom_note_keywords = ransom_note_keywords
-        self.extension_change_alert = extension_change_alert
-        self.events = []
-        self.last_rate_alert = None
-        super().__init__()
-    
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                return f.read()
+        except Exception:
+            with open(file_path, 'rb') as f:
+                binary_data = f.read()
+            return f"Binary file (hex): {binascii.hexlify(binary_data[:100]).decode('utf-8')}..."
+    except Exception as e:
+        return f"Error reading file: {e}"
 
-    def send_event(self, event_data):
-        print(f"[DEBUG] Attempting to send to topic '{topic}': {event_data}")
-        try: 
-            future = self.event_producer.send(topic, value=str(event_data).encode('utf-8'))
-            record_metadata = future.get(timeout=10)
-            print(f"Event sent: {event_data['event_type']} - {event_data['file_path']}")
-            print(f"[DEBUG] Successfully sent to partition {record_metadata.partition}, offset {record_metadata.offset}")  
-        except Exception as e:
-            print(f"[ERROR] Failed to send event: {e}")
 
-    def _check_rate_alert(self, now):
-        cutoff = now - self.rate_window
-        self.events = [t for t in self.events if t > cutoff]
-        if len(self.events) < self.rate_threshold:
-            return
-        if self.last_rate_alert and (now - self.last_rate_alert).total_seconds() < self.cooldown_seconds:
-            return
-
-        self.last_rate_alert = now
-        details = {
-            "event_count": len(self.events),
-            "window_seconds": int(self.rate_window.total_seconds()),
-        }
-        self.alert_manager.send_alert("rate_spike", details, "high")
-    
-    # Create standardized event data structure.
-    def _create_event(self, event):
-        return {
-            'timestamp': datetime.now(timezone.utc).isoformat(),
-            'event_type': event.event_type,
-            'file_path': event.src_path,
-            'is_directory': event.is_directory,
-            'file_extension': Path(event.src_path).suffix if not event.is_directory else None,
-            'file_name': Path(event.src_path).name
-        }
-    
-    # Detects file modifications. 
-    def on_modified(self, event):
-        if not event.is_directory:
-            event_data = self._create_event(event)
-            self.send_event(event_data)
-            now = datetime.now(timezone.utc)
-            self.events.append(now)
-            self._check_rate_alert(now)
-    
-    # Detects creation of files.
-    def on_created(self, event):
-        if not event.is_directory:
-            event_data = self._create_event(event)
-            self.send_event(event_data)
-            filename = Path(event.src_path).name.lower()
-            for keyword in self.ransom_note_keywords:
-                if keyword in filename:
-                    details = {"file_path": event.src_path, "keyword": keyword}
-                    self.alert_manager.send_alert("ransom_note", details, "high")
-                    break
-    
-    # Detects deletion of files.
-    def on_deleted(self, event):
-        if not event.is_directory:
-            event_data = self._create_event(event)
-            self.send_event(event_data)
-    
-    # Detects file move and rename events.
-    def on_moved(self, event):
-        if not event.is_directory:
-            event_data = self._create_event(event)
-            event_data['dest_path'] = event.dest_path
-            self.send_event(event_data)
-            if self.extension_change_alert:
-                old_ext = Path(event.src_path).suffix
-                new_ext = Path(event.dest_path).suffix
-                if old_ext != new_ext:
-                    details = {
-                        "src_path": event.src_path,
-                        "dest_path": event.dest_path,
-                        "old_ext": old_ext,
-                        "new_ext": new_ext,
-                    }
-                    self.alert_manager.send_alert("extension_change", details, "medium")
-
-    
-    
-    
-def monitor_directory(event_producer, path, alert_manager, config):
-    print(f"[DEBUG] Starting monitoring on path: {path}")
+def monitor_directory(event_producer, path, poll_interval=2):
+    print(f"[DEBUG] Starting polling-based monitoring on path: {path} (interval: {poll_interval}s)")
     if not os.path.exists(path):
         print(f"[ERROR] Monitored path does not exist: {path}")
         sys.exit(1)
-    rate_threshold = int(config.get("detection", "rate_threshold", fallback="10"))
-    rate_window_seconds = int(config.get("detection", "rate_window_seconds", fallback="60"))
-    cooldown_seconds = int(config.get("detection", "cooldown_seconds", fallback="30"))
-    ransom_keywords = config.get(
-        "detection",
-        "ransom_note_keywords",
-        fallback="readme,decrypt,recover,restore",
-    )
-    ransom_note_keywords = [k.strip().lower() for k in ransom_keywords.split(",") if k.strip()]
-    extension_change_alert = get_bool_setting(config, "detection", "extension_change_alert", True)
 
-    event_handler = MyEventHandler(
-        event_producer,
-        alert_manager,
-        rate_threshold,
-        rate_window_seconds,
-        cooldown_seconds,
-        ransom_note_keywords,
-        extension_change_alert,
-    )
-    observer = Observer()
-    observer.schedule(event_handler, path, recursive=True)
-    observer.start()
-    try:
-        while True:
-            time.sleep(1)
-    finally:
-        observer.stop()
-        observer.join()
-    
+    # Track file state: path -> (mtime, size)
+    file_state = {}
+
+    # Initial scan to populate state without sending events
+    for root, dirs, files in os.walk(path):
+        for filename in files:
+            file_path = os.path.join(root, filename)
+            try:
+                stat = os.stat(file_path)
+                file_state[file_path] = (stat.st_mtime, stat.st_size)
+            except OSError:
+                pass
+
+    print(f"[DEBUG] Initial scan complete. Tracking {len(file_state)} files.")
+
+    while True:
+        time.sleep(poll_interval)
+        try:
+            current_files = set()
+
+            for root, dirs, files in os.walk(path):
+                for filename in files:
+                    file_path = os.path.join(root, filename)
+                    current_files.add(file_path)
+                    try:
+                        stat = os.stat(file_path)
+                        mtime, size = stat.st_mtime, stat.st_size
+                    except OSError:
+                        continue
+
+                    if file_path not in file_state:
+                        # New file created
+                        file_state[file_path] = (mtime, size)
+                        event_data = {
+                            'timestamp': datetime.now(timezone.utc).isoformat(),
+                            'event_type': 'created',
+                            'file_path': file_path,
+                            'is_directory': False,
+                            'file_extension': Path(file_path).suffix,
+                            'file_name': Path(file_path).name,
+                            'file_contents': read_file_contents(file_path),
+                        }
+                        send_event(event_producer, event_data)
+
+                    elif (mtime, size) != file_state[file_path]:
+                        # File modified
+                        file_state[file_path] = (mtime, size)
+                        event_data = {
+                            'timestamp': datetime.now(timezone.utc).isoformat(),
+                            'event_type': 'modified',
+                            'file_path': file_path,
+                            'is_directory': False,
+                            'file_extension': Path(file_path).suffix,
+                            'file_name': Path(file_path).name,
+                            'file_contents': read_file_contents(file_path),
+                        }
+                        send_event(event_producer, event_data)
+
+            # Detect deleted files
+            deleted = set(file_state.keys()) - current_files
+            for file_path in deleted:
+                del file_state[file_path]
+                event_data = {
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                    'event_type': 'deleted',
+                    'file_path': file_path,
+                    'is_directory': False,
+                    'file_extension': Path(file_path).suffix,
+                    'file_name': Path(file_path).name,
+                }
+                send_event(event_producer, event_data)
+
+        except Exception as e:
+            print(f"[ERROR] Error during directory scan: {e}")
 
 
 if __name__ == "__main__":
     config = load_config()
     path = config.get("settings", "MONITORED_DIR_PATH")
-    interval = config.getint("settings", "SNAPSHOT_INTERVAL_SECONDS")
+    poll_interval = int(config.get("settings", "POLL_INTERVAL_SECONDS", fallback="2"))
     kafka_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
     print(f"[DEBUG] Connecting to Kafka at: {kafka_servers}")
     print(f"[DEBUG] Path: {path}")
-    try: 
+    try:
         event_producer = KafkaProducer(
             bootstrap_servers=kafka_servers,
-            retries=5,                        # ADD: retry on failure
+            retries=5,
             retry_backoff_ms=1000,
         )
         print(f"[DEBUG] KafkaProducer created successfully")
     except Exception as e:
         print(f"[ERROR] Failed to create KafkaProducer: {e}")
         sys.exit(1)
-        
-    alert_topic = os.getenv("ALERT_TOPIC", "security-alerts")
-    node_id = config.get("agent", "node_id", fallback="").strip()
-    if not node_id:
-        node_id = socket.gethostname()
 
-    shared_secret = config.get("security", "shared_secret", fallback="change-me")
-    signer = AlertSigner(shared_secret)
-
-    listen_host = config.get("gossip", "listen_host", fallback="0.0.0.0")
-    listen_port = int(config.get("gossip", "listen_port", fallback="9101"))
-    peers = parse_peers(config.get("gossip", "peers", fallback=""))
-    send_to_coordinator = get_bool_setting(config, "gossip", "send_to_coordinator", True)
-    heartbeat_interval = float(config.get("gossip", "heartbeat_interval", fallback="2.0"))
-    leader_ttl = float(config.get("gossip", "leader_ttl", fallback="6.0"))
-
-    def publish_alert(alert):
-        payload = json.dumps(alert, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-        event_producer.send(alert_topic, value=payload)
-
-    def on_alert(alert, source):
-        is_leader = gossip_node.is_leader() if gossip_node else False
-        if is_leader:
-            publish_alert(alert)
-        print(f"ALERT via {source}: {alert['alert_type']} - {alert['details']}")
-
-    def on_leader_change(leader_id):
-        print(f"Coordinator updated: {leader_id}")
-
-    gossip_node = GossipNode(
-        node_id=node_id,
-        listen_host=listen_host,
-        listen_port=listen_port,
-        peers=peers,
-        signer=signer,
-        heartbeat_interval=heartbeat_interval,
-        leader_ttl=leader_ttl,
-        on_alert=on_alert,
-        on_leader_change=on_leader_change,
-    )
-    gossip_node.start()
-
-    alert_manager = AlertManager(
-        node_id=node_id,
-        gossip_node=gossip_node,
-        send_to_coordinator=send_to_coordinator,
-    )
-    start_snapshot_scheduler(path, interval)
-    monitor_directory(event_producer, path, alert_manager, config)
-    
-    
-    
-        
+    monitor_directory(event_producer, path, poll_interval)

@@ -66,8 +66,6 @@ services:
       - type: bind
         source: ./settings-node1.ini
         target: /app/settings.ini
-        bind:
-          propagation: rshared
       - type: bind
         source: ./node1_data
         target: /data
@@ -75,9 +73,7 @@ services:
           propagation: rshared
       - type: bind
         source: ./.aws
-        target: ./.aws
-        bind:
-          propagation: rshared
+        target: /app/.aws
 
   node2:
     build: .
@@ -92,8 +88,6 @@ services:
       - type: bind
         source: ./settings-node2.ini
         target: /app/settings.ini
-        bind:
-          propagation: rshared
       - type: bind
         source: ./node2_data
         target: /data
@@ -101,9 +95,7 @@ services:
           propagation: rshared
       - type: bind
         source: ./.aws
-        target: ./.aws
-        bind:
-          propagation: rshared
+        target: /app/.aws
 
   node3:
     build: .
@@ -118,8 +110,6 @@ services:
       - type: bind
         source: ./settings-node3.ini
         target: /app/settings.ini
-        bind:
-          propagation: rshared
       - type: bind
         source: ./node3_data
         target: /data
@@ -127,9 +117,7 @@ services:
           propagation: rshared
       - type: bind
         source: ./.aws
-        target: ./.aws
-        bind:
-          propagation: rshared
+        target: /app/.aws
 
 volumes:
   zookeeper-data:
