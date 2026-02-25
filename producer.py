@@ -7,6 +7,7 @@ import configparser
 from datetime import datetime, timezone
 import json
 import binascii
+from aws_client import start_snapshot_scheduler
 
 topic = 'file-monitoring'
 
@@ -175,11 +176,7 @@ def monitor_directory(event_producer, path, poll_interval=2):
             print(f"[ERROR] Error during directory scan: {e}")
 
 
-if __name__ == "__main__":
-    config = load_config()
-    path = config.get("settings", "MONITORED_DIR_PATH")
-    poll_interval = int(config.get("settings", "POLL_INTERVAL_SECONDS", fallback="2"))
-    kafka_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+def main( path, poll_interval, kafka_servers):
     print(f"[DEBUG] Connecting to Kafka at: {kafka_servers}")
     print(f"[DEBUG] Path: {path}")
     try:

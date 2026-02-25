@@ -9,4 +9,5 @@ COPY . /app/
 
 EXPOSE 9101/udp
 
-CMD ["python", "producer.py"]
+CMD ["python", "-u", "main.py"]
+
