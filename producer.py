@@ -5,9 +5,8 @@ import time
 import os
 import configparser
 from datetime import datetime, timezone
-import json
 import binascii
-from aws_client import start_snapshot_scheduler
+
 
 topic = 'file-monitoring'
 
