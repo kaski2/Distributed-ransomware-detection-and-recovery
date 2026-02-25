@@ -63,9 +63,21 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ALERT_TOPIC: security-alerts
     volumes:
-      - ./settings-node1.ini:/app/settings.ini
-      - ./node1_data:/data
-      - ./.aws:/.aws
+      - type: bind
+        source: ./settings-node1.ini
+        target: /app/settings.ini
+        bind:
+          propagation: rshared
+      - type: bind
+        source: ./node1_data
+        target: /data
+        bind:
+          propagation: rshared
+      - type: bind
+        source: ./.aws
+        target: ./.aws
+        bind:
+          propagation: rshared
 
   node2:
     build: .
@@ -77,9 +89,21 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ALERT_TOPIC: security-alerts
     volumes:
-      - ./settings-node2.ini:/app/settings.ini
-      - ./node2_data:/data
-      - ./.aws:/.aws
+      - type: bind
+        source: ./settings-node2.ini
+        target: /app/settings.ini
+        bind:
+          propagation: rshared
+      - type: bind
+        source: ./node2_data
+        target: /data
+        bind:
+          propagation: rshared
+      - type: bind
+        source: ./.aws
+        target: ./.aws
+        bind:
+          propagation: rshared
 
   node3:
     build: .
@@ -91,9 +115,21 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ALERT_TOPIC: security-alerts
     volumes:
-      - ./settings-node3.ini:/app/settings.ini
-      - ./node3_data:/data
-      - ./.aws:/.aws
+      - type: bind
+        source: ./settings-node3.ini
+        target: /app/settings.ini
+        bind:
+          propagation: rshared
+      - type: bind
+        source: ./node3_data
+        target: /data
+        bind:
+          propagation: rshared
+      - type: bind
+        source: ./.aws
+        target: ./.aws
+        bind:
+          propagation: rshared
 
 volumes:
   zookeeper-data:
