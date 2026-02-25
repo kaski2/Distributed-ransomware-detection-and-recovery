@@ -63,8 +63,16 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ALERT_TOPIC: security-alerts
     volumes:
-      - ./settings-node1.ini:/app/settings.ini
-      - F:/anime:/data
+      - type: bind
+        source: ./settings-node1.ini
+        target: /app/settings.ini
+        bind:
+          propagation: rshared
+      - type: bind
+        source: C:/Users/kaski/Desktop/uni/distro/secretdata
+        target: /data
+        bind:
+          propagation: rshared
 
   node2:
     build: .
@@ -76,8 +84,16 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ALERT_TOPIC: security-alerts
     volumes:
-      - ./settings-node2.ini:/app/settings.ini
-      - ./node2_data:/data
+      - type: bind
+        source: ./settings-node2.ini
+        target: /app/settings.ini
+        bind:
+          propagation: rshared
+      - type: bind
+        source: ./node2_data
+        target: /data
+        bind:
+          propagation: rshared
 
   node3:
     build: .
@@ -89,8 +105,16 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ALERT_TOPIC: security-alerts
     volumes:
-      - ./settings-node3.ini:/app/settings.ini
-      - ./node3_data:/data
+      - type: bind
+        source: ./settings-node3.ini
+        target: /app/settings.ini
+        bind:
+          propagation: rshared
+      - type: bind
+        source: ./node3_data
+        target: /data
+        bind:
+          propagation: rshared
 
 volumes:
   zookeeper-data:
