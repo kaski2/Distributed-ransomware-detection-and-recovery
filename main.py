@@ -27,13 +27,13 @@ def load_config():
             print("Configuration file not found. Creating one with default values.")
             CONFIG_FILE.touch()
     except configparser.DuplicateSectionError as e:
-        print(f"[Error] duplicate section in configuration file: {e}")
+        print(f"Duplicate section in configuration file: {e}")
         sys.exit(1)
     except configparser.ParsingError as e:
-        print(f"[Error] parsing error in settings.ini: {e}")
+        print(f"Parsing error in settings.ini: {e}")
         sys.exit(1)
     except configparser.DuplicateOptionError as e:
-        print(f"[Error] duplicate option in settings.ini: under section: {e.section} option: {e.option}")
+        print(f"Duplicate option in settings.ini: under section: {e.section} option: {e.option}")
         sys.exit(1)
 
     modified = False
@@ -67,8 +67,8 @@ if __name__ == "__main__":
     path = config.get("settings", "MONITORED_DIR_PATH")
     poll_interval = int(config.get("settings", "POLL_INTERVAL_SECONDS", fallback="2"))
     kafka_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-    print(f"[DEBUG] Connecting to Kafka at: {kafka_servers}")
-    print(f"[DEBUG] Path: {path}")
+    print(f"Connecting to Kafka at: {kafka_servers}")
+    print(f"Path: {path}")
     t1 = threading.Thread(target=producer.main, args=(path, poll_interval, kafka_servers, config))
     t2 = threading.Thread(target=aws_client.main, args=(path, poll_interval))
     t1.start()
