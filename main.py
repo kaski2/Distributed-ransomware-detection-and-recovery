@@ -11,7 +11,11 @@ import configparser
 CONFIG_FILE = Path("settings.ini")
 
 REQUIRED_SETTINGS = {
-    "settings": ["MONITORED_DIR_PATH"]
+    "settings": ["MONITORED_DIR_PATH"],
+    "agent": ["node_id"],
+    "security": ["shared_secret"],
+    "gossip": ["listen_host", "listen_port", "peers", "heartbeat_interval", "leader_ttl", "send_to_coordinator"],
+    "detection": ["ransom_note_keywords", "rate_threshold", "rate_window_seconds", "extension_change_alert"]
 }
 
 def load_config():
@@ -65,7 +69,7 @@ if __name__ == "__main__":
     kafka_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
     print(f"[DEBUG] Connecting to Kafka at: {kafka_servers}")
     print(f"[DEBUG] Path: {path}")
-    t1 = threading.Thread(target=producer.main, args=(path, poll_interval, kafka_servers))
+    t1 = threading.Thread(target=producer.main, args=(path, poll_interval, kafka_servers, config))
     t2 = threading.Thread(target=aws_client.main, args=(path, poll_interval))
     t1.start()
     t2.start()

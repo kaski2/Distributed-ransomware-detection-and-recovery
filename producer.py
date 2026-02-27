@@ -23,67 +23,6 @@ def send_alert(event_producer, alert_data):
     except Exception as e:
         print(f"[ERROR] Failed to send alert: {e}")
 
-
-def load_detection_config():
-    node_id = "unknown"
-    keywords = []
-    shared_secret = "change-me"
-    listen_host = "0.0.0.0"
-    listen_port = 9101
-    peers = []
-    send_to_coordinator = True
-    heartbeat_interval = 2.0
-    leader_ttl = 6.0
-
-    config = configparser.ConfigParser()
-
-    config_candidates = [
-        "settings.ini",
-        "/app/settings.ini",
-    ]
-    loaded_files = config.read(config_candidates)
-
-    if loaded_files:
-        keyword_csv = config.get("detection", "ransom_note_keywords", fallback="")
-        keywords = [item.strip().lower() for item in keyword_csv.split(",") if item.strip()]
-        node_id = config.get("agent", "node_id", fallback=node_id)
-        shared_secret = config.get("security", "shared_secret", fallback=shared_secret)
-        listen_host = config.get("gossip", "listen_host", fallback=listen_host)
-        listen_port = config.getint("gossip", "listen_port", fallback=listen_port)
-        peers_raw = config.get("gossip", "peers", fallback="")
-        send_to_coordinator = config.getboolean("gossip", "send_to_coordinator", fallback=send_to_coordinator)
-        heartbeat_interval = config.getfloat("gossip", "heartbeat_interval", fallback=heartbeat_interval)
-        leader_ttl = config.getfloat("gossip", "leader_ttl", fallback=leader_ttl)
-
-        peers = []
-        for peer in peers_raw.split(","):
-            peer = peer.strip()
-            if not peer or ":" not in peer:
-                continue
-            host, port = peer.rsplit(":", 1)
-            try:
-                peers.append((host, int(port)))
-            except ValueError:
-                continue
-
-        if not keywords:
-            print("[WARN] detection.ransom_note_keywords is empty in settings file.")
-    else:
-        print("[WARN] No settings file found. Keyword-based alerts are disabled.")
-
-    return {
-        "node_id": node_id,
-        "keywords": keywords,
-        "shared_secret": shared_secret,
-        "listen_host": listen_host,
-        "listen_port": listen_port,
-        "peers": peers,
-        "send_to_coordinator": send_to_coordinator,
-        "heartbeat_interval": heartbeat_interval,
-        "leader_ttl": leader_ttl,
-    }
-
-
 def read_file_contents(file_path, max_size_bytes=1024*1024):
     """
     Safely read file contents. Returns either text content or base64-encoded binary.
@@ -178,14 +117,14 @@ def monitor_directory(path, on_event, poll_interval=2):
             print(f"[ERROR] Error during directory scan: {e}")
 
 
-def main( path, poll_interval, kafka_servers):
+def main( path, poll_interval, kafka_servers, config):
     print(f"[DEBUG] Connecting to Kafka at: {kafka_servers}")
     print(f"[DEBUG] Path: {path}")
-    runtime = load_detection_config()
-    node_id = runtime["node_id"]
-    keywords = runtime["keywords"]
+    node_id = config['agent']["node_id"]
+    keywords = config['detection']["ransom_note_keywords"].split(",")
     print(f"[DEBUG] Alert keywords: {keywords}")
-    print(f"[DEBUG] Gossip peers: {runtime['peers']}")
+    print(f"[DEBUG] Gossip peers: {config['gossip']['peers']}")
+
     try:
         event_producer = KafkaProducer(
             bootstrap_servers=kafka_servers,
@@ -198,7 +137,7 @@ def main( path, poll_interval, kafka_servers):
         print(f"[ERROR] Failed to create KafkaProducer: {e}")
         sys.exit(1)
 
-    signer = AlertSigner(runtime["shared_secret"])
+    signer = AlertSigner(config["security"]["shared_secret"])
 
     def on_alert(alert, source):
         payload = dict(alert)
@@ -207,12 +146,12 @@ def main( path, poll_interval, kafka_servers):
 
     gossip_node = GossipNode(
         node_id=node_id,
-        listen_host=runtime["listen_host"],
-        listen_port=runtime["listen_port"],
-        peers=runtime["peers"],
+        listen_host=config["gossip"]["listen_host"],
+        listen_port=config["gossip"]["listen_port"],
+        peers=config["gossip"]["peers"],
         signer=signer,
-        heartbeat_interval=runtime["heartbeat_interval"],
-        leader_ttl=runtime["leader_ttl"],
+        heartbeat_interval=config["gossip"]["heartbeat_interval"],
+        leader_ttl=config["gossip"]["leader_ttl"],
         on_alert=on_alert,
         on_leader_change=lambda leader_id: print(f"[DEBUG] Leader changed to: {leader_id}"),
     )
@@ -221,7 +160,7 @@ def main( path, poll_interval, kafka_servers):
     alert_manager = AlertManager(
         node_id=node_id,
         gossip_node=gossip_node,
-        send_to_coordinator=runtime["send_to_coordinator"],
+        send_to_coordinator=config["gossip"]["send_to_coordinator"],
     )
     detector = AlertDetector(keywords)
 
