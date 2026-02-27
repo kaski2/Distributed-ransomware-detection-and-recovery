@@ -65,7 +65,7 @@ def load_config():
 if __name__ == "__main__":
     config = load_config()
     path = config.get("settings", "MONITORED_DIR_PATH")
-    poll_interval = int(config.get("settings", "POLL_INTERVAL_SECONDS", fallback="2"))
+    poll_interval = int(config.get("settings", "snapshot_interval_seconds", fallback="300"))
     kafka_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
     print(f"Connecting to Kafka at: {kafka_servers}")
     print(f"Path: {path}")
