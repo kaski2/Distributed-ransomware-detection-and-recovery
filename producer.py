@@ -138,12 +138,12 @@ def main( path, poll_interval, kafka_servers, config):
 
     gossip_node = GossipNode(
         node_id=node_id,
-        listen_host=config["gossip"]["listen_host"],
-        listen_port=config["gossip"]["listen_port"],
+        listen_host=int(config["gossip"]["listen_host"]),
+        listen_port=int(config["gossip"]["listen_port"]),
         peers=config["gossip"]["peers"],
         signer=signer,
-        heartbeat_interval=config["gossip"]["heartbeat_interval"],
-        leader_ttl=config["gossip"]["leader_ttl"],
+        heartbeat_interval=float(config["gossip"]["heartbeat_interval"]),
+        leader_ttl=float(config["gossip"]["leader_ttl"]),
         on_alert=on_alert,
         on_leader_change=lambda leader_id: print(f"Leader changed to: {leader_id}"),
     )

@@ -69,7 +69,7 @@ services:
         source: ./settings-node1.ini
         target: /app/settings.ini
       - type: bind
-        source: C:/Users/ainas/Distro/Testing-dir1/data
+        source: C:\Users\kaski\Desktop\uni\distro\Distributed-ransomware-detection-and-recovery\node1_data
         target: /data
       - type: bind
         source: ./.aws
@@ -89,7 +89,7 @@ services:
         source: ./settings-node2.ini
         target: /app/settings.ini
       - type: bind
-        source: C:/Users/ainas/Distro/Testing-dir2/data
+        source: C:\Users\kaski\Desktop\uni\distro\Distributed-ransomware-detection-and-recovery\node2_data
         target: /data
       - type: bind
         source: ./.aws
@@ -109,7 +109,7 @@ services:
         source: ./settings-node3.ini
         target: /app/settings.ini
       - type: bind
-        source: C:/Users/ainas/Distro/Testing-dir3/data
+        source: C:\Users\kaski\Desktop\uni\distro\Distributed-ransomware-detection-and-recovery\node3_data
         target: /data
       - type: bind
         source: ./.aws
