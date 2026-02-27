@@ -113,7 +113,7 @@ def monitor_directory(path, on_event, poll_interval=2):
             print(f"[DIR] Error during directory scan: {e}")
 
 
-def main( path, poll_interval, kafka_servers, config):
+def main( path, kafka_servers, config):
     node_id = config['agent']["node_id"]
     keywords = config['detection']["ransom_note_keywords"].split(",")
 
@@ -138,8 +138,8 @@ def main( path, poll_interval, kafka_servers, config):
 
     gossip_node = GossipNode(
         node_id=node_id,
-        listen_host=int(config["gossip"]["listen_host"]),
-        listen_port=int(config["gossip"]["listen_port"]),
+        listen_host=config["gossip"]["listen_host"],
+        listen_port=config["gossip"]["listen_port"],
         peers=config["gossip"]["peers"],
         signer=signer,
         heartbeat_interval=float(config["gossip"]["heartbeat_interval"]),
@@ -160,4 +160,4 @@ def main( path, poll_interval, kafka_servers, config):
         for alert in detector.detect(event_data):
             alert_manager.send_alert(alert["alert_type"], alert["details"], alert["severity"])
 
-    monitor_directory(path, on_event, poll_interval)
+    monitor_directory(path, on_event, config["gossip"]["heartbeat_interval"])
