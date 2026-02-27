@@ -3,73 +3,85 @@ from pathlib import Path
 import sys
 import time
 import os
+import json
 import configparser
 from datetime import datetime, timezone
 import binascii
 
+from alerting import AlertDetector, AlertManager, AlertSigner, GossipNode
 
-topic = 'file-monitoring'
 
-CONFIG_FILE = Path("settings.ini")
+topic = 'security-alerts'
 
-REQUIRED_SETTINGS = {
-    "settings": ["MONITORED_DIR_PATH"]
-}
-
-def load_config():
-    config = configparser.ConfigParser()
+def send_alert(event_producer, alert_data):
+    print(f"[DEBUG] Attempting to send alert to topic '{topic}': {alert_data}")
     try:
-        if CONFIG_FILE.exists():
-            config.read(CONFIG_FILE)
-        else:
-            print("Configuration file not found. Creating one with default values.")
-            CONFIG_FILE.touch()
-    except configparser.DuplicateSectionError as e:
-        print(f"[Error] duplicate section in configuration file: {e}")
-        sys.exit(1)
-    except configparser.ParsingError as e:
-        print(f"[Error] parsing error in settings.ini: {e}")
-        sys.exit(1)
-    except configparser.DuplicateOptionError as e:
-        print(f"[Error] duplicate option in settings.ini: under section: {e.section} option: {e.option}")
-        sys.exit(1)
-
-    modified = False
-    missing = []
-
-    for section, options in REQUIRED_SETTINGS.items():
-        if not config.has_section(section):
-            config.add_section(section)
-            modified = True
-
-        for option in options:
-            if not config.has_option(section, option) or not config[section][option].strip():
-                config.set(section, option, "")
-                modified = True
-                missing.append(f"{section}.{option}")
-
-    if modified:
-        with open(CONFIG_FILE, "w") as configfile:
-            config.write(configfile)
-
-    if missing:
-        print("ERROR MISSING MANDATORY SETTINGS IN settings.ini:")
-        for item in missing:
-            print(f" {item}")
-        print("fill these missing values in settings.ini")
-        sys.exit(1)
-    return config
-
-
-def send_event(event_producer, event_data):
-    print(f"[DEBUG] Attempting to send to topic '{topic}': {event_data}")
-    try:
-        future = event_producer.send(topic, value=str(event_data).encode('utf-8'))
+        future = event_producer.send(topic, value=alert_data)
         record_metadata = future.get(timeout=10)
-        print(f"Event sent: {event_data['event_type']} - {event_data['file_path']}")
+        print(f"Alert sent: {alert_data['alert_type']} - {alert_data['details'].get('file_path', '')}")
         print(f"[DEBUG] Successfully sent to partition {record_metadata.partition}, offset {record_metadata.offset}")
     except Exception as e:
-        print(f"[ERROR] Failed to send event: {e}")
+        print(f"[ERROR] Failed to send alert: {e}")
+
+
+def load_detection_config():
+    node_id = "unknown"
+    keywords = []
+    shared_secret = "change-me"
+    listen_host = "0.0.0.0"
+    listen_port = 9101
+    peers = []
+    send_to_coordinator = True
+    heartbeat_interval = 2.0
+    leader_ttl = 6.0
+
+    config = configparser.ConfigParser()
+
+    config_candidates = [
+        "settings.ini",
+        "/app/settings.ini",
+    ]
+    loaded_files = config.read(config_candidates)
+
+    if loaded_files:
+        keyword_csv = config.get("detection", "ransom_note_keywords", fallback="")
+        keywords = [item.strip().lower() for item in keyword_csv.split(",") if item.strip()]
+        node_id = config.get("agent", "node_id", fallback=node_id)
+        shared_secret = config.get("security", "shared_secret", fallback=shared_secret)
+        listen_host = config.get("gossip", "listen_host", fallback=listen_host)
+        listen_port = config.getint("gossip", "listen_port", fallback=listen_port)
+        peers_raw = config.get("gossip", "peers", fallback="")
+        send_to_coordinator = config.getboolean("gossip", "send_to_coordinator", fallback=send_to_coordinator)
+        heartbeat_interval = config.getfloat("gossip", "heartbeat_interval", fallback=heartbeat_interval)
+        leader_ttl = config.getfloat("gossip", "leader_ttl", fallback=leader_ttl)
+
+        peers = []
+        for peer in peers_raw.split(","):
+            peer = peer.strip()
+            if not peer or ":" not in peer:
+                continue
+            host, port = peer.rsplit(":", 1)
+            try:
+                peers.append((host, int(port)))
+            except ValueError:
+                continue
+
+        if not keywords:
+            print("[WARN] detection.ransom_note_keywords is empty in settings file.")
+    else:
+        print("[WARN] No settings file found. Keyword-based alerts are disabled.")
+
+    return {
+        "node_id": node_id,
+        "keywords": keywords,
+        "shared_secret": shared_secret,
+        "listen_host": listen_host,
+        "listen_port": listen_port,
+        "peers": peers,
+        "send_to_coordinator": send_to_coordinator,
+        "heartbeat_interval": heartbeat_interval,
+        "leader_ttl": leader_ttl,
+    }
 
 
 def read_file_contents(file_path, max_size_bytes=1024*1024):
@@ -93,7 +105,7 @@ def read_file_contents(file_path, max_size_bytes=1024*1024):
         return f"Error reading file: {e}"
 
 
-def monitor_directory(event_producer, path, poll_interval=2):
+def monitor_directory(path, on_event, poll_interval=2):
     print(f"[DEBUG] Starting polling-based monitoring on path: {path} (interval: {poll_interval}s)")
     if not os.path.exists(path):
         print(f"[ERROR] Monitored path does not exist: {path}")
@@ -141,7 +153,7 @@ def monitor_directory(event_producer, path, poll_interval=2):
                             'file_name': Path(file_path).name,
                             'file_contents': read_file_contents(file_path),
                         }
-                        send_event(event_producer, event_data)
+                        on_event(event_data)
 
                     elif (mtime, size) != file_state[file_path]:
                         # File modified
@@ -155,21 +167,12 @@ def monitor_directory(event_producer, path, poll_interval=2):
                             'file_name': Path(file_path).name,
                             'file_contents': read_file_contents(file_path),
                         }
-                        send_event(event_producer, event_data)
+                        on_event(event_data)
 
             # Detect deleted files
             deleted = set(file_state.keys()) - current_files
             for file_path in deleted:
                 del file_state[file_path]
-                event_data = {
-                    'timestamp': datetime.now(timezone.utc).isoformat(),
-                    'event_type': 'deleted',
-                    'file_path': file_path,
-                    'is_directory': False,
-                    'file_extension': Path(file_path).suffix,
-                    'file_name': Path(file_path).name,
-                }
-                send_event(event_producer, event_data)
 
         except Exception as e:
             print(f"[ERROR] Error during directory scan: {e}")
@@ -178,15 +181,52 @@ def monitor_directory(event_producer, path, poll_interval=2):
 def main( path, poll_interval, kafka_servers):
     print(f"[DEBUG] Connecting to Kafka at: {kafka_servers}")
     print(f"[DEBUG] Path: {path}")
+    runtime = load_detection_config()
+    node_id = runtime["node_id"]
+    keywords = runtime["keywords"]
+    print(f"[DEBUG] Alert keywords: {keywords}")
+    print(f"[DEBUG] Gossip peers: {runtime['peers']}")
     try:
         event_producer = KafkaProducer(
             bootstrap_servers=kafka_servers,
             retries=5,
             retry_backoff_ms=1000,
+            value_serializer=lambda value: json.dumps(value).encode('utf-8'),
         )
         print(f"[DEBUG] KafkaProducer created successfully")
     except Exception as e:
         print(f"[ERROR] Failed to create KafkaProducer: {e}")
         sys.exit(1)
 
-    monitor_directory(event_producer, path, poll_interval)
+    signer = AlertSigner(runtime["shared_secret"])
+
+    def on_alert(alert, source):
+        payload = dict(alert)
+        payload["ingestion_source"] = source
+        send_alert(event_producer, payload)
+
+    gossip_node = GossipNode(
+        node_id=node_id,
+        listen_host=runtime["listen_host"],
+        listen_port=runtime["listen_port"],
+        peers=runtime["peers"],
+        signer=signer,
+        heartbeat_interval=runtime["heartbeat_interval"],
+        leader_ttl=runtime["leader_ttl"],
+        on_alert=on_alert,
+        on_leader_change=lambda leader_id: print(f"[DEBUG] Leader changed to: {leader_id}"),
+    )
+    gossip_node.start()
+
+    alert_manager = AlertManager(
+        node_id=node_id,
+        gossip_node=gossip_node,
+        send_to_coordinator=runtime["send_to_coordinator"],
+    )
+    detector = AlertDetector(keywords)
+
+    def on_event(event_data):
+        for alert in detector.detect(event_data):
+            alert_manager.send_alert(alert["alert_type"], alert["details"], alert["severity"])
+
+    monitor_directory(path, on_event, poll_interval)

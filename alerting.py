@@ -192,4 +192,39 @@ class AlertManager:
         }
 
         if self.send_to_coordinator:
-            self.gossip_node.send_to_coordinator(alert)
+            sent = self.gossip_node.send_to_coordinator(alert)
+            if not sent:
+                self.gossip_node.on_alert(alert, "local_fallback")
+        else:
+            self.gossip_node.on_alert(alert, "local")
+
+
+class AlertDetector:
+    def __init__(self, ransom_note_keywords):
+        self.ransom_note_keywords = [keyword.lower() for keyword in ransom_note_keywords]
+
+    def detect(self, event_data):
+        alerts = []
+        event_type = event_data.get("event_type")
+        if event_type not in {"created", "modified"}:
+            return alerts
+
+        file_name = (event_data.get("file_name") or "").lower()
+        file_contents = (event_data.get("file_contents") or "").lower()
+        file_path = event_data.get("file_path", "")
+
+        for keyword in self.ransom_note_keywords:
+            if keyword in file_name or keyword in file_contents:
+                alerts.append(
+                    {
+                        "alert_type": "ransom_note",
+                        "severity": "high",
+                        "details": {
+                            "file_path": file_path,
+                            "keyword": keyword,
+                        },
+                    }
+                )
+                break
+
+        return alerts

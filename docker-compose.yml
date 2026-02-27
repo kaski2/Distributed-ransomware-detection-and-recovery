@@ -69,10 +69,8 @@ services:
         source: ./settings-node1.ini
         target: /app/settings.ini
       - type: bind
-        source: ./node1_data
+        source: C:/Users/ainas/Distro/Testing-dir1/data
         target: /data
-        bind:
-          propagation: rshared
       - type: bind
         source: ./.aws
         target: /app/.aws
@@ -91,10 +89,8 @@ services:
         source: ./settings-node2.ini
         target: /app/settings.ini
       - type: bind
-        source: ./node2_data
+        source: C:/Users/ainas/Distro/Testing-dir2/data
         target: /data
-        bind:
-          propagation: rshared
       - type: bind
         source: ./.aws
         target: /app/.aws
@@ -113,10 +109,8 @@ services:
         source: ./settings-node3.ini
         target: /app/settings.ini
       - type: bind
-        source: ./node3_data
+        source: C:/Users/ainas/Distro/Testing-dir3/data
         target: /data
-        bind:
-          propagation: rshared
       - type: bind
         source: ./.aws
         target: /app/.aws

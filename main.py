@@ -3,13 +3,8 @@ import os
 import aws_client
 import producer
 import threading
-from pathlib import Path
 import sys
 import configparser
-from datetime import datetime, timezone
-
-
-CONFIG_FILE = Path("settings.ini")
 
 REQUIRED_SETTINGS = {
     "settings": ["MONITORED_DIR_PATH"]
@@ -17,12 +12,19 @@ REQUIRED_SETTINGS = {
 
 def load_config():
     config = configparser.ConfigParser()
+    config_candidates = [
+        "settings.ini",
+        "/app/settings.ini",
+        "settings-node1.ini",
+        "settings-node2.ini",
+        "settings-node3.ini",
+    ]
+
     try:
-        if CONFIG_FILE.exists():
-            config.read(CONFIG_FILE)
-        else:
-            print("Configuration file not found. Creating one with default values.")
-            CONFIG_FILE.touch()
+        loaded_files = config.read(config_candidates)
+        if not loaded_files:
+            print("[Error] No settings file found. Expected one of: settings.ini, /app/settings.ini, settings-node1.ini, settings-node2.ini, settings-node3.ini")
+            sys.exit(1)
     except configparser.DuplicateSectionError as e:
         print(f"[Error] duplicate section in configuration file: {e}")
         sys.exit(1)
@@ -33,29 +35,22 @@ def load_config():
         print(f"[Error] duplicate option in settings.ini: under section: {e.section} option: {e.option}")
         sys.exit(1)
 
-    modified = False
     missing = []
 
     for section, options in REQUIRED_SETTINGS.items():
         if not config.has_section(section):
-            config.add_section(section)
-            modified = True
+            missing.append(f"{section}.*")
+            continue
 
         for option in options:
             if not config.has_option(section, option) or not config[section][option].strip():
-                config.set(section, option, "")
-                modified = True
                 missing.append(f"{section}.{option}")
 
-    if modified:
-        with open(CONFIG_FILE, "w") as configfile:
-            config.write(configfile)
-
     if missing:
-        print("ERROR MISSING MANDATORY SETTINGS IN settings.ini:")
+        print("ERROR MISSING MANDATORY SETTINGS:")
         for item in missing:
             print(f" {item}")
-        print("fill these missing values in settings.ini")
+        print("fill these missing values in your settings file")
         sys.exit(1)
     return config
 
@@ -67,7 +62,7 @@ if __name__ == "__main__":
     print(f"[DEBUG] Connecting to Kafka at: {kafka_servers}")
     print(f"[DEBUG] Path: {path}")
     t1 = threading.Thread(target=producer.main, args=(path, poll_interval, kafka_servers))
-    t2 = threading.Thread(target=aws_client.main, args=(path, poll_interval, kafka_servers))
+    t2 = threading.Thread(target=aws_client.main, args=(path, poll_interval))
     t1.start()
     t2.start()
     t1.join()
