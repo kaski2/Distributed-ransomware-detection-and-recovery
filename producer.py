@@ -18,7 +18,7 @@ def send_alert(event_producer, alert_data):
         future.get(timeout=10)
         print(f"Alert sent: {alert_data['alert_type']} - {alert_data['details'].get('file_path', '')}")
     except Exception as e:
-        print(f"Failed to send alert: {e}")
+        print(f"[ALERT] Failed to send alert: {e}")
 
 def read_file_contents(file_path, max_size_bytes=1024*1024):
     """
@@ -43,14 +43,14 @@ def read_file_contents(file_path, max_size_bytes=1024*1024):
 
 def monitor_directory(path, on_event, poll_interval=2):
     if not os.path.exists(path):
-        print(f"Monitored path does not exist: {path}")
+        print(f"[DIR] Monitored path does not exist: {path}")
         sys.exit(1)
 
     # Track file state: path -> (mtime, size)
     file_state = {}
 
     # Initial scan to populate state without sending events
-    for root, dirs, files in os.walk(path):
+    for root, _, files in os.walk(path):
         for filename in files:
             file_path = os.path.join(root, filename)
             try:
@@ -110,7 +110,7 @@ def monitor_directory(path, on_event, poll_interval=2):
                 del file_state[file_path]
 
         except Exception as e:
-            print(f"Error during directory scan: {e}")
+            print(f"[DIR] Error during directory scan: {e}")
 
 
 def main( path, poll_interval, kafka_servers, config):
@@ -126,7 +126,7 @@ def main( path, poll_interval, kafka_servers, config):
         )
         print(f"KafkaProducer created successfully")
     except Exception as e:
-        print(f"Failed to create KafkaProducer: {e}")
+        print(f"[KAFKA] Failed to create KafkaProducer: {e}")
         sys.exit(1)
 
     signer = AlertSigner(config["security"]["shared_secret"])

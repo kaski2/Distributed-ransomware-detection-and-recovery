@@ -27,13 +27,13 @@ def load_config():
             print("Configuration file not found. Creating one with default values.")
             CONFIG_FILE.touch()
     except configparser.DuplicateSectionError as e:
-        print(f"Duplicate section in configuration file: {e}")
+        print(f"[CONFIG] Duplicate section in configuration file: {e}")
         sys.exit(1)
     except configparser.ParsingError as e:
-        print(f"Parsing error in settings.ini: {e}")
+        print(f"[CONFIG] Parsing error in settings.ini: {e}")
         sys.exit(1)
     except configparser.DuplicateOptionError as e:
-        print(f"Duplicate option in settings.ini: under section: {e.section} option: {e.option}")
+        print(f"[CONFIG] Duplicate option in settings.ini: under section: {e.section} option: {e.option}")
         sys.exit(1)
 
     modified = False
@@ -55,7 +55,7 @@ def load_config():
             config.write(configfile)
 
     if missing:
-        print("ERROR MISSING MANDATORY SETTINGS IN settings.ini:")
+        print("[CONFIG] ERROR MISSING MANDATORY SETTINGS IN settings.ini:")
         for item in missing:
             print(f" {item}")
         print("fill these missing values in settings.ini")
