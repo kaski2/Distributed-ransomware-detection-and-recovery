@@ -69,6 +69,7 @@ if __name__ == "__main__":
     kafka_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
     print(f"Connecting to Kafka at: {kafka_servers}")
     print(f"Path: {path}")
+    print(f"DEBUGGGGGGG {snapshot_interval}")
     t1 = threading.Thread(target=producer.main, args=(path, kafka_servers, config))
     t2 = threading.Thread(target=aws_client.main, args=(path, snapshot_interval))
     t1.start()
