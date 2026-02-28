@@ -62,6 +62,7 @@ class GossipNode:
         self._lock = threading.Lock()
         self._peer_last_seen = {}
         self._peer_addr = {}
+        self._peer_reported_leader = {}
         self._leader_id = None
 
     def start(self):
@@ -131,8 +132,11 @@ class GossipNode:
             node_id = message.get("node_id")
             if node_id:
                 with self._lock:
-                    self._peer_last_seen[node_id] = time.time()
+                    self._peer_last_seen[node_id] = time.monotonic()
                     self._peer_addr[node_id] = addr
+                    if msg_type == "heartbeat":
+                        reported_leader = (message.get("payload") or {}).get("leader_id")
+                        self._peer_reported_leader[node_id] = reported_leader
 
             if msg_type == "heartbeat":
                 continue
@@ -148,26 +152,58 @@ class GossipNode:
 
     def _heartbeat_loop(self):
         while not self._stop_event.is_set():
-            message = self._build_message("heartbeat", {"status": "ok"})
+            message = self._build_message("heartbeat", {"status": "ok", "leader_id": self._leader_id})
             for peer in list(self.peers):
-                self._send_message(message, peer)
+                try:
+                    self._send_message(message, peer)
+                except OSError:
+                    continue
 
             self._update_leader()
             time.sleep(self.heartbeat_interval)
 
     def _update_leader(self):
-        now = time.time()
+        now = time.monotonic()
         candidates = {self.node_id}
+        reported_leaders = set()
         with self._lock:
-            for peer_id, last_seen in self._peer_last_seen.items():
-                if now - last_seen <= self.leader_ttl:
-                    candidates.add(peer_id)
+            for peer_id, last_seen in list(self._peer_last_seen.items()):
+                if now - last_seen > self.leader_ttl:
+                    self._peer_last_seen.pop(peer_id, None)
+                    self._peer_addr.pop(peer_id, None)
+                    self._peer_reported_leader.pop(peer_id, None)
+                    continue
 
-        leader_id = min(candidates) if candidates else None
-        if leader_id != self._leader_id:
-            self._leader_id = leader_id
-            if self.on_leader_change:
-                self.on_leader_change(leader_id)
+                candidates.add(peer_id)
+                reported_leader = self._peer_reported_leader.get(peer_id)
+                if reported_leader:
+                    reported_leaders.add(reported_leader)
+
+        reported_leaders &= candidates
+        if self._leader_id in candidates:
+            reported_leaders.add(self._leader_id)
+
+        next_leader_id = self._leader_id
+        consensus_leader_id = min(reported_leaders) if reported_leaders else None
+
+        if self._leader_id in candidates and self._leader_id != self.node_id:
+            if consensus_leader_id is not None:
+                next_leader_id = consensus_leader_id
+            else:
+                next_leader_id = self._leader_id
+        elif consensus_leader_id is not None:
+            next_leader_id = consensus_leader_id
+        elif self._leader_id in candidates:
+            next_leader_id = self._leader_id
+        else:
+            next_leader_id = min(candidates) if candidates else None
+
+        if next_leader_id == self._leader_id:
+            return
+
+        self._leader_id = next_leader_id
+        if self.on_leader_change:
+            self.on_leader_change(next_leader_id)
 
 
 class AlertManager:
