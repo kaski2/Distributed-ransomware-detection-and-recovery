@@ -66,7 +66,7 @@ def read_file_contents(file_path, max_size_bytes=1024*1024):
         return f"Error reading file: {e}"
 
 
-def monitor_directory(path, on_event, poll_interval=300):
+def monitor_directory(path, on_event, poll_interval=2):  # Security alert time period
     if not os.path.exists(path):
         print(f"[DIR] Monitored path does not exist: {path}")
         sys.exit(1)
