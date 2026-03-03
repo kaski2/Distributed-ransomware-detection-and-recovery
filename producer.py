@@ -1,19 +1,23 @@
-from kafka import KafkaProducer
-from pathlib import Path
+"""Kafka producer for file system monitoring and security alert dispatching."""
+
+import binascii
+import json
+import os
 import sys
 import time
-import os
-import json
 from datetime import datetime, timezone
-import binascii
+from pathlib import Path
+
+from kafka import KafkaProducer
 
 from alerting import AlertDetector, AlertManager, AlertSigner, GossipNode
 
 
-topic = 'security-alerts'
+TOPIC = 'security-alerts'
 
 
 def parse_gossip_peers(peers_value):
+    """Parse a comma-separated 'host:port' string or list into a list of (host, port) tuples."""
     if isinstance(peers_value, (list, tuple)):
         parsed_peers = []
         for peer in peers_value:
@@ -35,38 +39,40 @@ def parse_gossip_peers(peers_value):
 
 
 def parse_bool(value):
+    """Return True if value is a truthy string (1, true, yes, on)."""
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
+
 def send_alert(event_producer, alert_data):
+    """Send an alert dict to Kafka, logging success or failure."""
     try:
-        future = event_producer.send(topic, value=alert_data)
+        future = event_producer.send(TOPIC, value=alert_data)
         future.get(timeout=10)
         print(f"Alert sent: {alert_data['alert_type']} - {alert_data['details'].get('file_path', '')}")
     except Exception as e:
         print(f"[ALERT] Failed to send alert: {e}")
 
+
 def read_file_contents(file_path, max_size_bytes=1024*1024):
-    """
-    Safely read file contents. Returns either text content or base64-encoded binary.
-    max_size_bytes: Maximum file size to read (default 1MB)
-    """
+    """Read file as text or hex-encoded binary. Returns an error string on failure."""
     try:
         stat = os.stat(file_path)
         if stat.st_size > max_size_bytes:
             return f"File too large: {stat.st_size} bytes, max: {max_size_bytes} bytes>"
-        
+
         try:
             with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
                 return f.read()
-        except Exception:
+        except OSError:
             with open(file_path, 'rb') as f:
                 binary_data = f.read()
             return f"Binary file (hex): {binascii.hexlify(binary_data[:100]).decode('utf-8')}..."
-    except Exception as e:
+    except OSError as e:
         return f"Error reading file: {e}"
 
 
-def monitor_directory(path, on_event, poll_interval=1):  # Security alert time period
+def monitor_directory(path, on_event, poll_interval=1):
+    """Poll a directory for file changes and call on_event for each create, modify, or delete."""
     if not os.path.exists(path):
         print(f"[DIR] Monitored path does not exist: {path}")
         sys.exit(1)
@@ -134,11 +140,36 @@ def monitor_directory(path, on_event, poll_interval=1):  # Security alert time p
             for file_path in deleted:
                 del file_state[file_path]
 
-        except Exception as e:
+        except OSError as e:
             print(f"[DIR] Error during directory scan: {e}")
 
 
+def _build_gossip_node(config, node_id, signer, on_alert):
+    """Construct and return a GossipNode from config."""
+
+    listen_host = config["gossip"]["listen_host"]
+    listen_port = int(config["gossip"]["listen_port"])
+    peers = parse_gossip_peers(config["gossip"]["peers"])
+    send_to_coordinator = parse_bool(config["gossip"]["send_to_coordinator"])
+    heartbeat_interval = float(config["gossip"]["heartbeat_interval"])
+    leader_ttl = float(config["gossip"]["leader_ttl"])
+
+    gossip_node = GossipNode(
+        node_id=node_id,
+        listen_host=listen_host,
+        listen_port=listen_port,
+        peers=peers,
+        signer=signer,
+        heartbeat_interval=heartbeat_interval,
+        leader_ttl=leader_ttl,
+        on_alert=on_alert,
+        on_leader_change=lambda leader_id: print(f"Leader changed to: {leader_id}"),
+    )
+    return gossip_node, send_to_coordinator
+
+
 def main(path, kafka_servers, config):
+    """Start Kafka producer, gossip node, and directory monitor."""
     node_id = config['agent']["node_id"]
     keywords = config['detection']["ransom_note_keywords"].split(",")
 
@@ -149,7 +180,7 @@ def main(path, kafka_servers, config):
             retry_backoff_ms=1000,
             value_serializer=lambda value: json.dumps(value).encode('utf-8'),
         )
-        print(f"KafkaProducer created successfully")
+        print("KafkaProducer created successfully")
     except Exception as e:
         print(f"[KAFKA] Failed to create KafkaProducer: {e}")
         sys.exit(1)
@@ -161,22 +192,7 @@ def main(path, kafka_servers, config):
         payload["ingestion_source"] = source
         send_alert(event_producer, payload)
 
-    listen_host = config["gossip"]["listen_host"]
-    listen_port = int(config["gossip"]["listen_port"])
-    peers = parse_gossip_peers(config["gossip"]["peers"])
-    send_to_coordinator = parse_bool(config["gossip"]["send_to_coordinator"])
-
-    gossip_node = GossipNode(
-        node_id=node_id,
-        listen_host=listen_host,
-        listen_port=listen_port,
-        peers=peers,
-        signer=signer,
-        heartbeat_interval=float(config["gossip"]["heartbeat_interval"]),
-        leader_ttl=float(config["gossip"]["leader_ttl"]),
-        on_alert=on_alert,
-        on_leader_change=lambda leader_id: print(f"Leader changed to: {leader_id}"),
-    )
+    gossip_node, send_to_coordinator = _build_gossip_node(config, node_id, signer, on_alert)
     gossip_node.start()
 
     alert_manager = AlertManager(
