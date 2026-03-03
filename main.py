@@ -1,11 +1,13 @@
+"""Entry point for the ransomware detection agent."""
+
 import os
+import sys
+import threading
+import configparser
+from pathlib import Path
 
 import aws_client
 import producer
-import threading
-from pathlib import Path
-import sys
-import configparser
 
 
 CONFIG_FILE = Path("settings.ini")
@@ -14,15 +16,23 @@ REQUIRED_SETTINGS = {
     "settings": ["MONITORED_DIR_PATH"],
     "agent": ["node_id"],
     "security": ["shared_secret"],
-    "gossip": ["listen_host", "listen_port", "peers", "heartbeat_interval", "leader_ttl", "send_to_coordinator"],
-    "detection": ["ransom_note_keywords", "rate_threshold", "rate_window_seconds", "extension_change_alert"]
+    "gossip": [
+        "listen_host", "listen_port", "peers",
+        "heartbeat_interval", "leader_ttl", "send_to_coordinator"
+    ],
+    "detection": [
+        "ransom_note_keywords", "rate_threshold",
+        "rate_window_seconds", "extension_change_alert"
+    ]
 }
 
+
 def load_config():
-    config = configparser.ConfigParser()
+    """Load and validate settings.ini, creating missing keys and exiting on errors."""
+    cfg = configparser.ConfigParser()
     try:
         if CONFIG_FILE.exists():
-            config.read(CONFIG_FILE)
+            cfg.read(CONFIG_FILE)
         else:
             print("Configuration file not found. Creating one with default values.")
             CONFIG_FILE.touch()
@@ -33,26 +43,26 @@ def load_config():
         print(f"[CONFIG] Parsing error in settings.ini: {e}")
         sys.exit(1)
     except configparser.DuplicateOptionError as e:
-        print(f"[CONFIG] Duplicate option in settings.ini: under section: {e.section} option: {e.option}")
+        print(f"[CONFIG] Duplicate option in settings.ini: section={e.section} option={e.option}")
         sys.exit(1)
 
     modified = False
     missing = []
 
     for section, options in REQUIRED_SETTINGS.items():
-        if not config.has_section(section):
-            config.add_section(section)
+        if not cfg.has_section(section):
+            cfg.add_section(section)
             modified = True
 
         for option in options:
-            if not config.has_option(section, option) or not config[section][option].strip():
-                config.set(section, option, "")
+            if not cfg.has_option(section, option) or not cfg[section][option].strip():
+                cfg.set(section, option, "")
                 modified = True
                 missing.append(f"{section}.{option}")
 
     if modified:
-        with open(CONFIG_FILE, "w") as configfile:
-            config.write(configfile)
+        with open(CONFIG_FILE, "w", encoding="utf-8") as configfile:
+            cfg.write(configfile)
 
     if missing:
         print("[CONFIG] ERROR MISSING MANDATORY SETTINGS IN settings.ini:")
@@ -60,7 +70,8 @@ def load_config():
             print(f" {item}")
         print("fill these missing values in settings.ini")
         sys.exit(1)
-    return config
+    return cfg
+
 
 if __name__ == "__main__":
     config = load_config()
@@ -69,7 +80,6 @@ if __name__ == "__main__":
     kafka_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
     print(f"Connecting to Kafka at: {kafka_servers}")
     print(f"Path: {path}")
-    print(f"DEBUGGGGGGG {snapshot_interval}")
     t1 = threading.Thread(target=producer.main, args=(path, kafka_servers, config))
     t2 = threading.Thread(target=aws_client.main, args=(path, snapshot_interval))
     t1.start()
