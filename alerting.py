@@ -9,26 +9,35 @@ from uuid import uuid4
 
 
 def utc_now_iso():
+    """Return the current UTC time as an ISO string."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def canonical_json(data):
+    """Return data serialized as canonical JSON."""
     return json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
 class AlertSigner:
+    """Sign and verify messages using HMAC."""
+
     def __init__(self, shared_secret):
+        """Initialize signer with a shared secret key."""
         self._key = shared_secret.encode("utf-8")
 
     def sign(self, payload):
+        """Return HMAC signature for the payload."""
         return hmac.new(self._key, payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
     def verify(self, payload, signature):
+        """Return True if signature is valid."""
         expected = self.sign(payload)
         return hmac.compare_digest(expected, signature)
 
 
 class GossipNode:
+    """Gossip-based node with leader election and alert forwarding."""
+
     def __init__(
         self,
         node_id,
@@ -41,6 +50,7 @@ class GossipNode:
         on_alert,
         on_leader_change=None,
     ):
+        """Initialize gossip node."""
         self.node_id = node_id
         self.listen_host = listen_host
         self.listen_port = listen_port
@@ -66,16 +76,20 @@ class GossipNode:
         self._leader_id = None
 
     def start(self):
+        """Start listener and heartbeat threads."""
         self._listener_thread.start()
         self._heartbeat_thread.start()
 
     def stop(self):
+        """Stop the node."""
         self._stop_event.set()
 
     def is_leader(self):
+        """Return True if this node is the leader."""
         return self._leader_id == self.node_id
 
     def send_to_coordinator(self, alert):
+        """Send alert to leader or handle locally."""
         leader_id = self._leader_id
         if leader_id is None or leader_id == self.node_id:
             self.on_alert(alert, "local")
@@ -92,6 +106,7 @@ class GossipNode:
         return True
 
     def _build_message(self, msg_type, payload):
+        """Build and sign a message."""
         message = {
             "type": msg_type,
             "node_id": self.node_id,
@@ -103,15 +118,18 @@ class GossipNode:
         return message
 
     def _verify_message(self, message):
+        """Verify message signature."""
         signature = message.get("sig", "")
         payload_text = canonical_json({k: v for k, v in message.items() if k != "sig"})
         return self.signer.verify(payload_text, signature)
 
     def _send_message(self, message, addr):
+        """Send message to a peer address."""
         data = json.dumps(message, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
         self._sock.sendto(data, addr)
 
     def _listen_loop(self):
+        """Listen for incoming messages."""
         while not self._stop_event.is_set():
             try:
                 data, addr = self._sock.recvfrom(65535)
@@ -151,6 +169,7 @@ class GossipNode:
                 self.on_alert(payload, "coordinator")
 
     def _heartbeat_loop(self):
+        """Send heartbeats and update leader."""
         while not self._stop_event.is_set():
             message = self._build_message("heartbeat", {"status": "ok", "leader_id": self._leader_id})
             for peer in list(self.peers):
@@ -163,6 +182,7 @@ class GossipNode:
             time.sleep(self.heartbeat_interval)
 
     def _update_leader(self):
+        """Update leader based on active peers."""
         now = time.monotonic()
         candidates = {self.node_id}
         reported_leaders = set()
@@ -207,17 +227,21 @@ class GossipNode:
 
 
 class AlertManager:
+    """Create and send alerts."""
+
     def __init__(
         self,
         node_id,
         gossip_node,
         send_to_coordinator,
     ):
+        """Initialize alert manager."""
         self.node_id = node_id
         self.gossip_node = gossip_node
         self.send_to_coordinator = send_to_coordinator
 
     def send_alert(self, alert_type, details, severity):
+        """Create and send an alert."""
         alert = {
             "alert_id": str(uuid4()),
             "alert_type": alert_type,
@@ -236,10 +260,14 @@ class AlertManager:
 
 
 class AlertDetector:
+    """Detect ransomware note indicators in events."""
+
     def __init__(self, ransom_note_keywords):
+        """Initialize detector with keywords."""
         self.ransom_note_keywords = [keyword.lower() for keyword in ransom_note_keywords]
 
     def detect(self, event_data):
+        """Return alerts based on event data."""
         alerts = []
         event_type = event_data.get("event_type")
         if event_type not in {"created", "modified"}:
