@@ -1,3 +1,5 @@
+"""Simple gossip-based alerting system with leader election and ransomware detection."""
+
 import hashlib
 import hmac
 import json
@@ -171,7 +173,8 @@ class GossipNode:
     def _heartbeat_loop(self):
         """Send heartbeats and update leader."""
         while not self._stop_event.is_set():
-            message = self._build_message("heartbeat", {"status": "ok", "leader_id": self._leader_id})
+            message = self._build_message("heartbeat",
+                                          {"status": "ok", "leader_id": self._leader_id})
             for peer in list(self.peers):
                 try:
                     self._send_message(message, peer)
