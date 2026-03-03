@@ -1,3 +1,5 @@
+"""AWS S3 client utilities for directory snapshotting and scheduled uploads."""
+
 import json
 import os
 import threading
@@ -9,15 +11,14 @@ import configparser
 import boto3
 
 
-
 def _get_env_variables():
-    
     aws_vars_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.aws', 'variables')
     config = configparser.ConfigParser()
     config.read_string('[DEFAULT]\n' + open(aws_vars_path).read())
 
     for key, value in config['DEFAULT'].items():
         os.environ[key.upper()] = value.strip('"').strip("'")
+
 
 def _initialize_s3_client() -> boto3.client:
     _get_env_variables()
@@ -30,9 +31,7 @@ def _initialize_s3_client() -> boto3.client:
 
 
 def take_directory_snapshot(directory: str) -> dict:
-    '''
-    Takes a snapshot by scanning the local monitored directory.
-    '''
+    """Scan a local directory and return a snapshot dict with file metadata and contents."""
     snapshot = {
         "directory": directory,
         "taken_at": datetime.now(timezone.utc).isoformat(),
@@ -59,7 +58,9 @@ def take_directory_snapshot(directory: str) -> dict:
 
             snapshot["files"][relative] = {
                 "size_bytes": stat.st_size,
-                "last_modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+                "last_modified": datetime.fromtimestamp(
+                    stat.st_mtime, tz=timezone.utc
+                ).isoformat(),
                 "sha256": sha256.hexdigest(),
                 "contents_b64": encoded_contents,
             }
@@ -71,16 +72,13 @@ def take_directory_snapshot(directory: str) -> dict:
 
 
 def upload_snapshot_to_s3(snapshot: dict) -> bool:
-    '''
-    Uploads the given snapshot to S3 as a JSON file.
-    '''
+    """Upload a snapshot dict to S3 as JSON. Returns True on success."""
     s3 = _initialize_s3_client()
     try:
-        
         config = configparser.ConfigParser()
         config.read('/app/settings.ini')
         node_id = config.get('agent', 'node_id', fallback='unknown')
-        
+
         bucket = os.environ['AWS_BUCKET_NAME']
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         key = f"snapshots/{node_id}_snapshot_{timestamp}.json"
@@ -89,16 +87,13 @@ def upload_snapshot_to_s3(snapshot: dict) -> bool:
         s3.put_object(Bucket=bucket, Key=key, Body=data, ContentType="application/json")
         print(f"[AWS S3] Uploaded snapshot to s3://{bucket}/{key}")
         return True
-    except Exception as e:
+    except (boto3.exceptions.Boto3Error, KeyError, OSError) as e:
         print(f"[AWS S3] Failed to upload snapshot: {e}")
         return False
 
 
 def get_snapshot_from_s3(key: str = None) -> dict | None:
-    '''
-    Retrieves a snapshot from S3.
-    If `key` is None, retrieves the most recently uploaded snapshot.
-    '''
+    """Retrieve a snapshot from S3. If key is None, fetches the most recent one."""
     try:
         s3 = _initialize_s3_client()
         bucket = os.environ['AWS_BUCKET_NAME']
@@ -118,25 +113,26 @@ def get_snapshot_from_s3(key: str = None) -> dict | None:
         response = s3.get_object(Bucket=bucket, Key=key)
         data = response['Body'].read().decode('utf-8')
         snapshot = json.loads(data)
-        print(f"[AWS S3] Retrieved snapshot taken at {snapshot.get('taken_at')} with {len(snapshot.get('files', {}))} files")
+        print(
+            f"[AWS S3] Retrieved snapshot taken at {snapshot.get('taken_at')} "
+            f"with {len(snapshot.get('files', {}))} files"
+        )
         return snapshot
 
-    except Exception as e:
+    except (boto3.exceptions.Boto3Error, KeyError, json.JSONDecodeError) as e:
         print(f"[AWS S3] Failed to retrieve snapshot: {e}")
         return None
 
 
 def start_snapshot_scheduler(directory: str, interval_seconds: int = 300) -> threading.Thread:
-    '''
-    Starts a background thread that periodically takes local directory snapshots and uploads them to S3.
-    '''
+    """Start a daemon thread that snapshots a directory and uploads to S3 on an interval."""
     def _run():
         print(f"[Scheduler] Starting — snapshot every {interval_seconds}s for: {directory}")
         while True:
             try:
                 snapshot = take_directory_snapshot(directory)
                 upload_snapshot_to_s3(snapshot)
-            except Exception as e:
+            except (OSError, boto3.exceptions.Boto3Error) as e:
                 print(f"[Scheduler] Unexpected error: {e}")
             threading.Event().wait(interval_seconds)
 
@@ -144,6 +140,8 @@ def start_snapshot_scheduler(directory: str, interval_seconds: int = 300) -> thr
     thread.start()
     return thread
 
+
 def main(path, interval):
+    """Entry point to start the snapshot scheduler."""
     start_snapshot_scheduler(path, interval)
 
